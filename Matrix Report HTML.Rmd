@@ -1,0 +1,232 @@
+---
+title: "Estudo sobre os Fundamentos do Mercado de Gás Natural e de Eletricidade"
+author: "Beatriz Fraga"
+date: "26 de Julho de 2018"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+## Introdução
+
+Este trabalho foi desenvolvido com o intuito de estudar a correlação de preços entre os mercados de gás natural e de eletricidade no Brasil no âmbito da geração termelétrica onde o gás é usado como combustível. Algumas das motivações para o estudo são:
+
+a) Existem opiniões variadas quanto ao impacto do preço de gás natural na formação do preço da energia elétrica;
+b) Alguns estudiosos afirmam que não há correlação considerando que o perfil elétrico do Brasil é altamente dependente da geração hidrelétrica;
+c) Outros acreditam que há uma forte correlação durante os períodos anuais de seca e em picos de demanda, fazendo-se necessário um estudo mais detalhado;
+d) Será feita uma análise estatística a partir de uma série temporal de preços com início em 2001.
+
+
+## Estrutura
+
+Partes componentes da análise:
+
+1. Base histórica de preços do gás natural usados como indexadores em contratos locais de fornecimento de combustível para termelétricas. Serão usados,: Brent, JKM e NBP. Fonte: [Thomson Reuters Eikon](https://customers.thomsonreuters.com/eikon/?)
+
+2. Base histórica do PLD (Preço de Liquidação da Diferença) calculado pela CCEE (Câmara de Comercialização de Energia Elétrica) a partir de um modelo de otimização rodado pela ONS (Operador Nacional do Sistema Elétrico). Fonte: [CCEE](https://www.ccee.org.br/portal/faces/pages_publico/inicio?_afrLoop=233752444393481&_adf.ctrl-state=134c95wghq_46)
+
+3. Base histórica do CMO (Custo Marginal da Operação) calculado pela ONS.
+
+4. Base histórica de ENA (Energia Natural Afluente) calculado pelo ONS como forma de indicador metereológico. Fonte: [ONS](http://ons.org.br/)
+
+5. Base histórica de Nível de Reservatório. Fonte: ONS.
+
+6. Base histórica da Taxa de Conversão do Dólar. Fonte: [Investing](https://www.investing.com/)
+
+## Métodos
+
+O preço da energia elétrica (PLD) e os indexadores do gás (Brent, NBP, HH, etc) apresentam periodicidade distintas. Enquanto que os indexadores são diários, o PLD é resultado de uma modelagem rodada semanalmente. Portanto, o PLD é sempre relacionado a uma sexta-feira ou a um sábado - quando a modelagem ultrapassa o limite de 23:59h da sexta anterior.
+
+Portanto, fez-se necessário definir a forma como o PLD e os indexadores iriam relacionar-se no tempo. Contando com o apoio de especialistas da indústria de energia, preferiu-se utilizar a seguinte regra: indexador do 1º dia últil posterior a divulgação do PLD. O algoritmo foi aplicado ainda na montagem da base consolidada - item 1.3 - no Excel. A mesma regra foi aplicada ao incorporar a taxa do dólar na 2ª fase da análise. Veja no esquema abaixo:
+
+
+| Preco | Sex | Sab | Dom | Seg | 
+|:------|:---:|:---:|:---:|----:|
+| PLD   |  X  |     |     |     |
+| Index |     |     |     |  X  | 
+
+
+## Pacotes Utilizados
+
+- **Tidyverse** -  para facilitar o tratamento de dados;
+
+- **Magrittr** -  para facilitar a escrita do código através do operador "pipe" simbolizado por %>%;
+
+- **Tidyr** - para facilitar o tratamento de dados;
+
+- **Dbplyr** - para manipular bases de dados;
+
+- **Dplyr** - para manipular bases de dados;
+
+- **Readxl** - para fazer a leitura inicial da base consolidada.
+
+## Base Consolidada
+
+Para o trabalho, consolidou-se todas as variáveis em uma matriz com série temporal fixada na escala do PLD que é calculado para cada semana do ano.
+
+10.656 observações para 22 variáveis.
+
+  A base foi organizada em formato **tidydata**:
+  
+   - Cada linha é uma observação
+   - Cada coluna é uma variável
+   - Cada célula é um valor
+
+## Carregando a Base e os Pacotes
+
+Para trazer os dados compilados em excel já salvos em formato .RData:
+
+```{r}
+
+load(file = "matrix.RData")
+head(matrix)
+
+```
+
+Para carregar os pacotes usados ao longo do trabalho:
+```{r, eval=FALSE}
+library(tidyverse)
+library(magrittr)
+library(tidyr)
+library(dbplyr)
+library(dplyr)
+library(readxl)
+```
+
+
+## Tratamento dos Dados
+
+Antes de iniciar os gráficos, faz-se necessário fazer um tratamento dos dados para facilitar a plotagem. 
+
+Primeiramente, será feito um filtro para eliminar observações incompletas relacionadas as variáveis **ENA %**, **ICE Brent Crude** e **Price** - métrica metereológica, preço do barril de petróleo Brent e preço da energia elétrica. 
+
+Logo após, será aplicado um segundo filtro para concentrar a análise na região e submercado do Sudeste que representa mais de 70% do mercado elétrico brasileiro. Esse enfoque é aplicado por especialistas da indústria energética por entenderem que o sudeste é uma amostra de melhor qualidade. O submercado do Sul por exemplo tem métricas distorcidas por ser a menor região do país. A região é representada pela variável **Region**. 
+
+```{r,include=TRUE, message=FALSE, warning=FALSE, results='hide'}
+library(magrittr)
+library(dplyr)
+CorrBrentPLD <- matrix %>% tbl_df() %>%
+  filter(!(is.na(`ENA %`) |
+             is.na(Price) |
+             is.na(`ICE Brent Crude`))) 
+CorrBrentPLD
+
+CorrBrentPLDSE <- CorrBrentPLD %>% tbl_df() %>%
+  filter(Region == "SE",
+         Year < 2018)
+CorrBrentPLDSE
+```
+
+## Plots
+
+#### Correlação entre Brent e PLD
+
+```{r CorrBrentPLDSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(knitr)
+aa <-ggplot(CorrBrentPLDSE[CorrBrentPLDSE$`ICE Brent Crude BRL`>0,],
+       aes(x=`ICE Brent Crude BRL`, y = Price, color= `ENA Class`))+
+  geom_point()+
+  facet_grid(.~`ENA Class`)+
+  geom_smooth(method = "lm")+
+  ylim(c(0,800))+
+   ggtitle("Correlation between ICE Brent and PLD in the SE submarket",
+          subtitle = "2001-2017")+
+  xlab("ICE Brent Crude (BRL/bbl)")+
+  ylab("PLD (BRL/Mwh)")
+aa
+```
+
+ Um detalhe importamte no ambiente empresarial é a identidade corporativa que inclui entre outras coisas a definição das **cores da empresa**. Aqui serão aplicadas as cores da Royal Dutch Shell: amarelo, vermelho e cinza. 
+ 
+ Usando a função **RGB** é possível extrair um código lido pelo R como cor para formatar o gráfico feito acima e deixá-lo mais próximo do padrão da empresa. 
+ 
+```{r, warning=FALSE}
+yellow <- rgb(251,206,7, maxColorValue = 255)
+red <- rgb(221,29,33, maxColorValue = 255)
+gray <- rgb(64,64,64,maxColorValue = 255)
+
+shellcolors <- c(yellow,red,gray)
+
+aa + scale_color_manual(values = shellcolors) + theme(legend.position = "none")
+```
+
+O gráfico comprova um comportamento esperado pela indústria. No período **wet** ou **molhado**, ou seja, com bastante chuva, a correlação é mínima. Isso é explicado devido a inutulização das térmicas durante os momento de geração hídrica. Dessa forma, os preços de gás (combustível para as térmicas) e de eletricidade têm baixíssima correlação.
+
+A medida que as chuvas diminuem caracterizando um comportamento **average** ou **médio** assim como **dry** ou **seco**, a correlação entre os preços aumenta devido ao maior despacho termelétrico (utilização) que tem como principal combustível de queima o gás natural representado aqui pelo Brent. 
+
+O **Brent ainda é o indexador para o preço do gás no Brasil** por conta da sua característica de alta liquidez. Os contratos de venda de gás estabelecem um preço que é uma parcela do Brent. 
+
+
+#### Correlação entre WTI e PLD
+
+
+```{r, message=FALSE, warning=FALSE}
+bb <-ggplot(data = CorrBrentPLDSE[CorrBrentPLDSE$`NYMEX Crude Oil BRL`>0,],
+            aes(x=`NYMEX Crude Oil BRL`, y = Price, color= `ENA Class`))+
+  geom_point()+
+  facet_grid(.~`ENA Class`)+
+  geom_smooth(method = "lm")+
+  ylim(c(0,800))+
+   ggtitle("Correlation between NYMEX WTI and PLD in the SE submarket",
+          subtitle = "2001-2017")+
+  xlab("NYMEX WTI Crude (BRL/bbl)")+
+  ylab("PLD (BRL/Mwh)")
+
+bb + scale_color_manual(values = shellcolors) + theme(legend.position = "none")
+```
+
+A correlação agora entre **WTI x PLD** é bastante semelhante ao visto anteriormente com **Brent x PLD**, isso porque WTI é um tipo de petróleo negociado na NYMEX Exchange que tem altíssima correlação com o ICE Brent. 
+
+O WTI também é utilizado no Brasil como indexador de gás nos contratos de fornecimento para as térmicas. 
+
+## Aplicando o Método de Pearson
+
+Para fazer a conta referente a cada tipo de comportamento metereológico, serão aplicados os seguintes filtros:
+
+```{r, echo=TRUE, results="hide"}
+wet <- CorrBrentPLDSE %>% tbl_df() %>%
+  filter(`ENA Class` == "Wet")
+wet 
+
+average <- CorrBrentPLDSE %>% tbl_df() %>%
+  filter(`ENA Class` == 'Average')
+average
+
+dry <- CorrBrentPLDSE %>% tbl_df() %>%
+  filter(`ENA Class` == "Dry")
+dry
+```
+
+Cálculo de correlação de Pearson:
+
+```{r}
+cor(wet$`ICE Brent Crude BRL`, wet$Price, use = "complete.obs", method = "pearson")
+
+cor(average$`ICE Brent Crude BRL`, average$Price, use = "complete.obs",
+    method = "pearson")
+
+cor(dry$`ICE Brent Crude BRL`, dry$Price, use = "complete.obs", 
+    method = "pearson")
+```
+
+## Conclusão
+
+- A correlação entre os mercados de eletricidade e de gás natural é muito baixa em períodos úmidos, quando as hidrelétricas são usadas em detrimento das termelétricas.
+
+- A correlação entre os mercados de eletricidade e de gás natural é baixa em períodos de precipitação normal ou de seca, quando o despacho das térmicas é maior.
+
+A  partir dos gráficos mostrados, é possível concluir que a princípio os mercados de gás natural e de eletricidade apresentam em média uma correlação baixa. Ou seja, são independentes. Essa conclusão está coerente com o atual funcionamento do mercado de gás no Brasil.
+
+Devido a presença dominadora da Petrobras por toda a cadeia do gás, o mercado de Trading não é estimulado. Por isso, os contratos de combustível existentes - com a Petrobras como vendedora - ou seja, ainda estão presos no passado e indexados ao Brent (petróleo cru). Tal fato representa o oposto do que acontece em mercados de energia mais maduros como os EUA onde o gás é indexado a HH, NBP e JKM. 
+
+Além da inexistência de um mercado de trading no Brasil, o nosso perfil hidrelétrico também interfere nessa estrutura de independência entre os mercados de gás e de eletricidade. Mais de 70% da matriz energética está relacionada a geração hídrica. Portanto, as térmicas aqui não têm a mesma representatividade no sistema elétrico quando comparado a outros mercados como o americano. 
+
+Dessa forma, uma nova análise de preços seria necessária em um futuro cenário onde exista um mercado de trading de gás natural no Brasil.  
+
+
+
+
+
+
+
